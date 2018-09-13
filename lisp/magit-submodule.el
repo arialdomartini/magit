@@ -123,6 +123,7 @@ an alist that supports the keys `:right-align' and `:pad-right'."
         magit-submodule-synchronize)
     (?d "Unpopulate     git submodule deinit [--force]"
         magit-submodule-unpopulate)
+    (?k "Remove" magit-submodule-remove)
     nil
     (?l "List all modules"  magit-list-submodules)
     (?f "Fetch all modules" magit-fetch-modules))
@@ -277,6 +278,31 @@ single module from the user."
          (magit-submodule-filtered-arguments "--force")))
   (magit-with-toplevel
     (magit-run-git-async "submodule" "deinit" args "--" modules)))
+
+;;;###autoload
+(defun magit-submodule-remove (modules)
+  "Unregister MODULES and remove their working directories.
+For safety reasons, do not remove the gitdirs and if a module has
+uncomitted changes, then do not remove it at all.  If a module's
+gitdir is located inside the working directory, then move it into
+the gitdir of the super-repository first."
+  (interactive (list (magit-module-confirm "Remove")))
+  (when (version< (magit-git-version) "2.12.0")
+    (error "This command requires Git v2.12.0"))
+  (magit-with-toplevel
+    (let (keep)
+      (dolist (module modules)
+        (if (let ((default-directory (expand-file-name module)))
+              (magit-anything-modified-p))
+            (push module keep)
+          (magit-call-git "submodule" "absorbgitdirs" "--" module)
+          (magit-call-git "rm" "--force" module)))
+      (when keep
+        (if (cdr keep)
+            (message "Omitted %s modules with uncommitted changes: %s"
+                     (length keep)
+                     (mapconcat #'identity keep ", "))
+          (message "Omitted module %s, it has uncommitted changes" keep))))))
 
 ;;; Sections
 

@@ -280,31 +280,61 @@ single module from the user."
     (magit-run-git-async "submodule" "deinit" args "--" modules)))
 
 ;;;###autoload
-(defun magit-submodule-remove (modules)
+(defun magit-submodule-remove (modules args trash-gitdirs)
   "Unregister MODULES and remove their working directories.
 
 For safety reasons, do not remove the gitdirs and if a module has
 uncomitted changes, then do not remove it at all.  If a module's
 gitdir is located inside the working directory, then move it into
-the gitdir of the superproject first."
-  (interactive (list (magit-module-confirm "Remove"))
+the gitdir of the superproject first.
+
+With the \"--force\" argument offer to remove dirty working
+directories and with a prefix argument offer to delete gitdirs.
+Both actions are very dangerous and have to be confirmed.  There
+are additional safety precausions in place, so you might be able
+to recover from making a mistake here, but don't count on it."
+  (interactive
+   (list (magit-module-confirm "Remove")
+         (magit-submodule-filtered-arguments "--force")
+         current-prefix-arg))
   (when (version< (magit-git-version) "2.12.0")
     (error "This command requires Git v2.12.0"))
   (magit-with-toplevel
-    (let (keep)
-      (dolist (module modules)
-        (if (let ((default-directory (expand-file-name module)))
-              (magit-anything-modified-p))
-            (push module keep)
-          (magit-call-git "submodule" "absorbgitdirs" "--" module)
-          (magit-call-git "submodule" "deinit" args "--" module)
-          (magit-call-git "rm" module)))
-      (when keep
-        (if (cdr keep)
-            (message "Omitted %s modules with uncommitted changes: %s"
-                     (length keep)
-                     (mapconcat #'identity keep ", "))
-          (message "Omitted module %s, it has uncommitted changes" keep)))
+    (when-let
+        ((modified
+          (cl-find-if (lambda (module)
+                        (let ((default-directory (expand-file-name module)))
+                          (magit-anything-modified-p)))
+                      modules)))
+      (if (member "--force" args)
+          (if (magit-confirm 'remove-dirty-modules
+                "Remove dirty module %s"
+                "Remove %i dirty modules"
+                t)
+              (dolist (module modified)
+                (let ((default-directory (expand-file-name module)))
+                  (magit-git "stash" "push"
+                             "-m" "backup before removal of this module")))
+            (setq modules (cl-set-difference modules modified)))
+        (if (cdr modified)
+            (message "Omitting %s modules with uncommitted changes: %s"
+                     (length modified)
+                     (mapconcat #'identity modified ", "))
+          (message "Omitting module %s, it has uncommitted changes" modified))
+        (setq modules (cl-set-difference modules modified))))
+    (when modules
+      (magit-git "submodule" "absorbgitdirs" "--" modules)
+      (magit-git "submodule" "deinit" args "--" modules)
+      (magit-git "rm" args "--" modules)
+      (when (and trash-gitdirs
+                 (magit-confirm 'trash-module-gitdirs
+                   "Trash gitdir of module %s"
+                   "Trash gitdirs of %i modules"
+                   t))
+        (dolist (module modules)
+          ;; Disregard if `magit-delete-by-moving-to-trash'
+          ;; is nil.  Not doing so would be to dangerous.
+          (delete-directory module nil t)))
       (magit-refresh))))
 
 ;;; Sections

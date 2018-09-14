@@ -323,18 +323,25 @@ to recover from making a mistake here, but don't count on it."
           (message "Omitting module %s, it has uncommitted changes" modified))
         (setq modules (cl-set-difference modules modified))))
     (when modules
-      (magit-git "submodule" "absorbgitdirs" "--" modules)
-      (magit-git "submodule" "deinit" args "--" modules)
-      (magit-git "rm" args "--" modules)
-      (when (and trash-gitdirs
-                 (magit-confirm 'trash-module-gitdirs
-                   "Trash gitdir of module %s"
-                   "Trash gitdirs of %i modules"
-                   t))
-        (dolist (module modules)
-          ;; Disregard if `magit-delete-by-moving-to-trash'
-          ;; is nil.  Not doing so would be to dangerous.
-          (delete-directory module nil t)))
+      ;; TODO deal with spaces in sm_path and name
+      (let ((alist (mapcar #'split-string
+                           (magit-git-lines "submodule" "foreach" "-q"
+                                            "echo $sm_path\0$name"))))
+        (magit-git "submodule" "absorbgitdirs" "--" modules)
+        (magit-git "submodule" "deinit" args "--" modules)
+        (magit-git "rm" args "--" modules)
+        (when (and trash-gitdirs
+                   (magit-confirm 'trash-module-gitdirs
+                     "Trash gitdir of module %s"
+                     "Trash gitdirs of %i modules"
+                     t))
+          (dolist (module modules)
+            ;; Disregard if `magit-delete-by-moving-to-trash'
+            ;; is nil.  Not doing so would be to dangerous.
+            (delete-directory
+             (magit-git-dir (convert-standard-filename
+                             (concat "modules/" (cdr (assoc module alist)))))
+             t t))))
       (magit-refresh))))
 
 ;;; Sections

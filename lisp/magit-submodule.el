@@ -326,7 +326,7 @@ to recover from making a mistake here, but don't count on it."
       ;; TODO deal with spaces in sm_path and name
       (let ((alist (mapcar #'split-string
                            (magit-git-lines "submodule" "foreach" "-q"
-                                            "echo $sm_path\0$name"))))
+                                            "echo $sm_path $name"))))
         (magit-git "submodule" "absorbgitdirs" "--" modules)
         (magit-git "submodule" "deinit" args "--" modules)
         (magit-git "rm" args "--" modules)
